@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "nodemon": "^2.0.20",
+    "nuxt": "^3.15.0",
+    "yarn": "^1.22.22"
+  },
+  "version": "0.0.0"
+}
