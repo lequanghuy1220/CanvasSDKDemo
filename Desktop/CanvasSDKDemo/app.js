@@ -1,43 +1,60 @@
-var express = require('express'),
-  bodyParser = require('body-parser'),
-  path = require('path') 
-var app = express();
-var crypto = require("crypto");
-var consumerSecretApp = process.env.CANVAS_CONSUMER_SECRET || '5AE4CA1543118B24EDA3A67A68BFB4AB7564E6229C33AABD09416D36BC9CA3CB';
+const express = require('express');
+const bodyParser = require('body-parser');
+const path = require('path');
+const crypto = require('crypto');
 
-console.log('consumer secret - '+consumerSecretApp);
+const app = express();
 
-app.use(express.static(path.join(__dirname, 'views')));
+// 🔑 Consumer secret
+const consumerSecretApp = process.env.CANVAS_CONSUMER_SECRET || '5AE4CA1543118B24EDA3A67A68BFB4AB7564E6229C33AABD09416D36BC9CA3CB';
+console.log('consumer secret - ' + consumerSecretApp);
+
+// Static + EJS setup
+app.use(express.static(path.join(__dirname, 'public')));
 app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
 
-app.use(bodyParser.urlencoded());
-
+// Body parser
+app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
- 
 
-app.get('/', function (req, res) {
-  res.render('hello');
+// 🟢 GET route (for testing in browser)
+app.get('/', (req, res) => {
+  res.render('index', { req: '{}' });
 });
 
-app.post('/', function (req, res) { 
-  var bodyArray = req.body.signed_request.split(".");
-    var consumerSecret = bodyArray[0];
-    var encoded_envelope = bodyArray[1];
+// 🟣 POST route (Salesforce Canvas calls here)
+app.post('/', (req, res) => {
+  try {
+    if (!req.body.signed_request) {
+      return res.status(400).send('Missing signed_request');
+    }
 
-    var check = crypto.createHmac("sha256", consumerSecretApp).update(encoded_envelope).digest("base64");
+    const bodyArray = req.body.signed_request.split('.');
+    const consumerSecret = bodyArray[0];
+    const encoded_envelope = bodyArray[1];
 
-    if (check === consumerSecret) { 
-        var envelope = JSON.parse(new Buffer(encoded_envelope, "base64").toString("ascii"));
-        //req.session.salesforce = envelope;
-        console.log("got the session object:");
-        console.log(envelope);
-        console.log(JSON.stringify(envelope) );
-        res.render('index', { title: envelope.context.user.userName, req : JSON.stringify(envelope) });
-    }else{
-        res.send("authentication failed");
-    } 
-})
- 
-app.listen(3000 , function () {
-	console.log ("server is listening!!!");
-} );
+    const check = crypto.createHmac('sha256', consumerSecretApp)
+      .update(encoded_envelope)
+      .digest('base64');
+
+    if (check === consumerSecret) {
+      const envelope = JSON.parse(Buffer.from(encoded_envelope, 'base64').toString('utf8'));
+      console.log('✅ Canvas signed request verified!');
+      console.log(envelope);
+      res.render('index', {
+        title: envelope.context.user.userName,
+        req: JSON.stringify(envelope)
+      });
+    } else {
+      res.status(401).send('❌ Authentication failed');
+    }
+  } catch (err) {
+    console.error('Error parsing signed_request:', err);
+    res.status(500).send('Server error');
+  }
+});
+
+// 🟢 Listen on Heroku dynamic port
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
